@@ -13,7 +13,7 @@ export function WelcomeStep() {
       {/* Title */}
       <div className="space-y-3">
         <h1 className="text-3xl md:text-4xl font-serif font-semibold text-foreground">
-          Bem-vindos ao Duo
+          Bem-vindos ao We
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
           Planejamento financeiro para casais que pensam no futuro
