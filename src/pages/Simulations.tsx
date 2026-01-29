@@ -1,225 +1,268 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { Slider } from '@/components/ui/slider';
-import { Button } from '@/components/ui/button';
-import { Sparkles, TrendingUp, TrendingDown, Clock, Shield, ArrowRight } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Card, CardContent } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Sparkles, ShoppingBag, Home, Target } from 'lucide-react';
+import { CurrentStateCard } from '@/components/simulations/CurrentStateCard';
+import { DailyCostSimulation } from '@/components/simulations/DailyCostSimulation';
+import { FixedCostsSimulation } from '@/components/simulations/FixedCostsSimulation';
+import { GoalDedicationSimulation } from '@/components/simulations/GoalDedicationSimulation';
+import { SimulationResult } from '@/components/simulations/SimulationResult';
 
-// Mock current state
+// Mock current state - would come from backend/context
 const currentState = {
   dailyAverage: 80,
+  totalFixedCosts: 4500,
   availableForGoals: 5900,
   safetyMargin: 1500,
-  mainGoalMonths: 9,
-  mainGoalName: 'Viagem para Itália',
+  goals: [
+    { id: '1', name: 'Viagem para Itália', currentContribution: 2000, estimatedMonths: 9, targetAmount: 25000, currentAmount: 8500 },
+    { id: '2', name: 'Entrada do apartamento', currentContribution: 1500, estimatedMonths: 24, targetAmount: 60000, currentAmount: 24000 },
+  ],
+  fixedCosts: [
+    { id: 'fc1', name: 'Aluguel', amount: 2500 },
+    { id: 'fc2', name: 'Internet', amount: 150 },
+    { id: 'fc3', name: 'Energia', amount: 200 },
+    { id: 'fc4', name: 'Streaming', amount: 80 },
+  ],
 };
 
-export default function Simulations() {
-  const [dailyChange, setDailyChange] = useState(0);
-  const [monthlyChange, setMonthlyChange] = useState(0);
+interface FixedCostAdjustment {
+  id: string;
+  name: string;
+  originalAmount: number;
+  newAmount: number;
+}
 
-  const formatCurrency = (value: number) => {
-    return value.toLocaleString('pt-BR');
+interface NewFixedCost {
+  name: string;
+  amount: number;
+}
+
+export default function Simulations() {
+  // Simulation states
+  const [dailyChange, setDailyChange] = useState(0);
+  const [fixedCostAdjustments, setFixedCostAdjustments] = useState<FixedCostAdjustment[]>([]);
+  const [newFixedCosts, setNewFixedCosts] = useState<NewFixedCost[]>([]);
+  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(currentState.goals[0]?.id || null);
+  const [goalDedicationPercentage, setGoalDedicationPercentage] = useState<number | null>(null);
+
+  // Calculate current dedication percentage for selected goal
+  const selectedGoal = currentState.goals.find(g => g.id === selectedGoalId);
+  const currentDedicationPercentage = selectedGoal
+    ? Math.round((selectedGoal.currentContribution / currentState.availableForGoals) * 100)
+    : 50;
+
+  // Calculate simulation results
+  const simulationResults = useMemo(() => {
+    // Daily impact
+    const dailyImpact = dailyChange * 30;
+
+    // Fixed costs impact
+    const fixedCostsChange = fixedCostAdjustments.reduce((sum, adj) => {
+      return sum + (adj.newAmount - adj.originalAmount);
+    }, 0) + newFixedCosts.reduce((sum, cost) => sum + cost.amount, 0);
+
+    // Total monthly change (negative dailyChange = savings, so we flip it)
+    const totalMonthlyChange = -dailyImpact - fixedCostsChange;
+
+    // New available for goals
+    const newAvailable = currentState.availableForGoals + totalMonthlyChange;
+
+    // Goal timeline calculation
+    let newEstimatedMonths = selectedGoal?.estimatedMonths || 0;
+    let monthsChange = 0;
+
+    if (selectedGoal) {
+      const dedicationPct = goalDedicationPercentage ?? currentDedicationPercentage;
+      const newContribution = Math.max(0, (newAvailable * dedicationPct) / 100);
+      const remainingAmount = selectedGoal.targetAmount - selectedGoal.currentAmount;
+      
+      if (newContribution > 0) {
+        newEstimatedMonths = Math.ceil(remainingAmount / newContribution);
+        monthsChange = selectedGoal.estimatedMonths - newEstimatedMonths;
+      } else {
+        newEstimatedMonths = Infinity;
+        monthsChange = -Infinity;
+      }
+    }
+
+    // Determine impact type
+    let impactType: 'positive' | 'negative' | 'neutral' = 'neutral';
+    if (totalMonthlyChange > 50) impactType = 'positive';
+    else if (totalMonthlyChange < -50) impactType = 'negative';
+
+    return {
+      dailyImpact,
+      fixedCostsChange,
+      totalMonthlyChange,
+      newAvailable,
+      newEstimatedMonths,
+      monthsChange,
+      impactType,
+    };
+  }, [dailyChange, fixedCostAdjustments, newFixedCosts, goalDedicationPercentage, selectedGoal, currentDedicationPercentage]);
+
+  // Check if there are any changes
+  const hasChanges = dailyChange !== 0 || 
+    fixedCostAdjustments.length > 0 || 
+    newFixedCosts.length > 0 ||
+    (goalDedicationPercentage !== null && goalDedicationPercentage !== currentDedicationPercentage);
+
+  // Handlers
+  const handleFixedCostAdjustment = (costId: string, newAmount: number) => {
+    const cost = currentState.fixedCosts.find(c => c.id === costId);
+    if (!cost) return;
+
+    setFixedCostAdjustments(prev => {
+      const existing = prev.find(a => a.id === costId);
+      if (existing) {
+        if (newAmount === cost.amount) {
+          // Remove adjustment if back to original
+          return prev.filter(a => a.id !== costId);
+        }
+        return prev.map(a => a.id === costId ? { ...a, newAmount } : a);
+      }
+      if (newAmount !== cost.amount) {
+        return [...prev, { id: costId, name: cost.name, originalAmount: cost.amount, newAmount }];
+      }
+      return prev;
+    });
   };
 
-  // Calculate impact
-  const dailyImpact = dailyChange * 30; // Monthly impact from daily change
-  const totalMonthlyChange = dailyImpact + monthlyChange;
-  const newAvailable = currentState.availableForGoals + totalMonthlyChange;
-  const newSafetyMargin = currentState.safetyMargin + (totalMonthlyChange * 0.1);
-  
-  // Estimate new goal timeline
-  const currentMonthlyContribution = 2000; // from goal
-  const newMonthlyContribution = Math.max(0, currentMonthlyContribution + totalMonthlyChange * 0.5);
-  const remainingAmount = 25000 - 8500; // target - current
-  const newEstimatedMonths = newMonthlyContribution > 0 
-    ? Math.ceil(remainingAmount / newMonthlyContribution) 
-    : Infinity;
-  const monthsChange = currentState.mainGoalMonths - newEstimatedMonths;
+  const handleRemoveFixedCostAdjustment = (costId: string) => {
+    setFixedCostAdjustments(prev => prev.filter(a => a.id !== costId));
+  };
 
-  const impactType: 'positive' | 'negative' | 'neutral' = 
-    totalMonthlyChange > 0 ? 'positive' : totalMonthlyChange < 0 ? 'negative' : 'neutral';
+  const handleAddNewCost = (cost: NewFixedCost) => {
+    setNewFixedCosts(prev => [...prev, cost]);
+  };
+
+  const handleUpdateNewCost = (index: number, cost: NewFixedCost) => {
+    setNewFixedCosts(prev => prev.map((c, i) => i === index ? cost : c));
+  };
+
+  const handleRemoveNewCost = (index: number) => {
+    setNewFixedCosts(prev => prev.filter((_, i) => i !== index));
+  };
 
   const resetSimulation = () => {
     setDailyChange(0);
-    setMonthlyChange(0);
+    setFixedCostAdjustments([]);
+    setNewFixedCosts([]);
+    setGoalDedicationPercentage(null);
   };
 
   return (
     <AppLayout>
-      <div className="space-y-8 animate-fade-in max-w-2xl mx-auto">
+      <div className="space-y-6 animate-fade-in max-w-3xl mx-auto">
         {/* Header */}
         <div className="space-y-2 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
-            <Sparkles className="w-8 h-8 text-primary" />
+          <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
+            <Sparkles className="w-7 h-7 text-primary" />
           </div>
           <h1 className="text-2xl md:text-3xl font-serif font-semibold text-foreground">
-            Simulações
+            Simular cenários
           </h1>
-          <p className="text-muted-foreground">
-            Veja como pequenas mudanças impactam seu futuro
+          <p className="text-muted-foreground max-w-md mx-auto">
+            Nada aqui altera seu plano real. Combine múltiplas decisões para ver o impacto completo.
           </p>
         </div>
 
-        {/* Daily change simulation */}
-        <div className="card-base p-6 space-y-6">
-          <div className="space-y-2">
-            <h3 className="font-semibold text-foreground">
-              E se vocês mudassem o custo diário?
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              Hoje vocês gastam em média R${currentState.dailyAverage}/dia
-            </p>
-          </div>
+        {/* Current State */}
+        <CurrentStateCard
+          dailyAverage={currentState.dailyAverage}
+          totalFixedCosts={currentState.totalFixedCosts}
+          availableForGoals={currentState.availableForGoals}
+          mainGoalName={currentState.goals[0]?.name}
+          mainGoalMonths={currentState.goals[0]?.estimatedMonths}
+        />
 
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Mudança diária</span>
-              <span className={cn(
-                "text-lg font-semibold",
-                dailyChange > 0 ? "text-destructive" : dailyChange < 0 ? "text-success" : "text-foreground"
-              )}>
-                {dailyChange >= 0 ? '+' : ''}R$ {dailyChange}/dia
-              </span>
-            </div>
-            
-            <Slider
-              value={[dailyChange]}
-              onValueChange={([value]) => setDailyChange(value)}
-              min={-50}
-              max={50}
-              step={5}
-              className="w-full"
-            />
-            
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>-R$ 50/dia</span>
-              <span>+R$ 50/dia</span>
-            </div>
-          </div>
-        </div>
+        {/* Simulation Tabs */}
+        <Tabs defaultValue="daily" className="w-full">
+          <TabsList className="grid w-full grid-cols-3 h-auto p-1">
+            <TabsTrigger value="daily" className="flex items-center gap-2 py-3">
+              <ShoppingBag className="w-4 h-4" />
+              <span className="hidden sm:inline">Custo diário</span>
+              <span className="sm:hidden">Diário</span>
+            </TabsTrigger>
+            <TabsTrigger value="fixed" className="flex items-center gap-2 py-3">
+              <Home className="w-4 h-4" />
+              <span className="hidden sm:inline">Custos fixos</span>
+              <span className="sm:hidden">Fixos</span>
+            </TabsTrigger>
+            <TabsTrigger value="goals" className="flex items-center gap-2 py-3">
+              <Target className="w-4 h-4" />
+              <span className="hidden sm:inline">Metas</span>
+              <span className="sm:hidden">Metas</span>
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Monthly extra simulation */}
-        <div className="card-base p-6 space-y-6">
-          <div className="space-y-2">
-            <h3 className="font-semibold text-foreground">
-              E se entrasse mais dinheiro?
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              Um bônus, freelance, ou renda extra mensal
-            </p>
-          </div>
+          <TabsContent value="daily" className="mt-4">
+            <Card>
+              <CardContent className="pt-6">
+                <DailyCostSimulation
+                  currentDailyAverage={currentState.dailyAverage}
+                  dailyChange={dailyChange}
+                  onDailyChangeUpdate={setDailyChange}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Renda extra mensal</span>
-              <span className={cn(
-                "text-lg font-semibold",
-                monthlyChange > 0 ? "text-success" : monthlyChange < 0 ? "text-destructive" : "text-foreground"
-              )}>
-                {monthlyChange >= 0 ? '+' : ''}R$ {formatCurrency(monthlyChange)}
-              </span>
-            </div>
-            
-            <Slider
-              value={[monthlyChange]}
-              onValueChange={([value]) => setMonthlyChange(value)}
-              min={-1000}
-              max={2000}
-              step={100}
-              className="w-full"
-            />
-            
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>-R$ 1.000</span>
-              <span>+R$ 2.000</span>
-            </div>
-          </div>
-        </div>
+          <TabsContent value="fixed" className="mt-4">
+            <Card>
+              <CardContent className="pt-6">
+                <FixedCostsSimulation
+                  currentFixedCosts={currentState.fixedCosts}
+                  adjustments={fixedCostAdjustments}
+                  newCosts={newFixedCosts}
+                  onAdjustmentChange={handleFixedCostAdjustment}
+                  onRemoveAdjustment={handleRemoveFixedCostAdjustment}
+                  onAddNewCost={handleAddNewCost}
+                  onUpdateNewCost={handleUpdateNewCost}
+                  onRemoveNewCost={handleRemoveNewCost}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-        {/* Impact visualization */}
-        {(dailyChange !== 0 || monthlyChange !== 0) && (
-          <div className={cn(
-            "card-elevated p-6 space-y-6 animate-slide-up",
-            impactType === 'positive' && "bg-success/5 border-success/20",
-            impactType === 'negative' && "bg-destructive/5 border-destructive/20"
-          )}>
-            <div className="flex items-center gap-3">
-              {impactType === 'positive' ? (
-                <TrendingUp className="w-6 h-6 text-success" />
-              ) : (
-                <TrendingDown className="w-6 h-6 text-destructive" />
-              )}
-              <h3 className="font-semibold text-foreground">Impacto na vida de vocês</h3>
-            </div>
+          <TabsContent value="goals" className="mt-4">
+            <Card>
+              <CardContent className="pt-6">
+                <GoalDedicationSimulation
+                  goals={currentState.goals}
+                  selectedGoalId={selectedGoalId}
+                  onGoalSelect={setSelectedGoalId}
+                  currentDedicationPercentage={currentDedicationPercentage}
+                  simulatedDedicationPercentage={goalDedicationPercentage}
+                  onDedicationChange={setGoalDedicationPercentage}
+                  availableForGoals={currentState.availableForGoals}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
 
-            <div className="grid gap-4">
-              {/* Monthly impact */}
-              <div className="flex items-center justify-between p-4 bg-background rounded-xl">
-                <div className="flex items-center gap-3">
-                  <Shield className="w-5 h-5 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">Espaço disponível</span>
-                </div>
-                <div className="text-right">
-                  <span className={cn(
-                    "font-semibold",
-                    impactType === 'positive' ? "text-success" : "text-destructive"
-                  )}>
-                    {totalMonthlyChange >= 0 ? '+' : ''}R$ {formatCurrency(totalMonthlyChange)}/mês
-                  </span>
-                </div>
-              </div>
-
-              {/* Goal timeline impact */}
-              <div className="flex items-center justify-between p-4 bg-background rounded-xl">
-                <div className="flex items-center gap-3">
-                  <Clock className="w-5 h-5 text-muted-foreground" />
-                  <div>
-                    <span className="text-sm text-muted-foreground">{currentState.mainGoalName}</span>
-                  </div>
-                </div>
-                <div className="text-right">
-                  {monthsChange !== 0 && isFinite(monthsChange) ? (
-                    <span className={cn(
-                      "font-semibold",
-                      monthsChange > 0 ? "text-success" : "text-destructive"
-                    )}>
-                      {monthsChange > 0 ? `${monthsChange} meses a menos` : `${Math.abs(monthsChange)} meses a mais`}
-                    </span>
-                  ) : (
-                    <span className="text-sm text-muted-foreground">Sem alteração</span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Message */}
-            <div className="p-4 bg-background rounded-xl">
-              {impactType === 'positive' ? (
-                <p className="text-sm text-foreground">
-                  <span className="font-medium">Ótimo!</span> Com essa mudança, vocês teriam mais 
-                  <span className="font-semibold text-success"> R$ {formatCurrency(Math.abs(totalMonthlyChange))}</span> por mês 
-                  para metas ou para aumentar a margem de segurança.
-                </p>
-              ) : (
-                <p className="text-sm text-foreground">
-                  <span className="font-medium">Atenção:</span> Isso reduziria o espaço disponível em 
-                  <span className="font-semibold text-destructive"> R$ {formatCurrency(Math.abs(totalMonthlyChange))}</span> por mês.
-                  Suas metas levariam mais tempo.
-                </p>
-              )}
-            </div>
-
-            <Button variant="secondary" onClick={resetSimulation} className="w-full">
-              Resetar simulação
-            </Button>
-          </div>
+        {/* Simulation Result */}
+        {hasChanges && (
+          <SimulationResult
+            impactType={simulationResults.impactType}
+            monthlyImpact={simulationResults.totalMonthlyChange}
+            goalName={selectedGoal?.name}
+            monthsChange={isFinite(simulationResults.monthsChange) ? simulationResults.monthsChange : 0}
+            originalMonths={selectedGoal?.estimatedMonths || 0}
+            newMonths={isFinite(simulationResults.newEstimatedMonths) ? simulationResults.newEstimatedMonths : 999}
+            originalAvailable={currentState.availableForGoals}
+            newAvailable={simulationResults.newAvailable}
+            onReset={resetSimulation}
+          />
         )}
 
         {/* Empty state */}
-        {dailyChange === 0 && monthlyChange === 0 && (
+        {!hasChanges && (
           <div className="text-center py-8 text-muted-foreground">
-            <p>Arraste os controles acima para ver como mudanças afetam o planejamento</p>
+            <p>Use os controles acima para simular mudanças no seu planejamento</p>
           </div>
         )}
       </div>
