@@ -8,6 +8,8 @@ import { DailyCostSimulation } from '@/components/simulations/DailyCostSimulatio
 import { FixedCostsSimulation } from '@/components/simulations/FixedCostsSimulation';
 import { GoalDedicationSimulation } from '@/components/simulations/GoalDedicationSimulation';
 import { SimulationResult } from '@/components/simulations/SimulationResult';
+import { SimulationsChat } from '@/components/simulations/SimulationsChat';
+import { SimulationsModeToggle } from '@/components/simulations/SimulationsModeToggle';
 
 // Mock current state - would come from backend/context
 const currentState = {
@@ -40,6 +42,9 @@ interface NewFixedCost {
 }
 
 export default function Simulations() {
+  // Mode toggle
+  const [mode, setMode] = useState<'simulations' | 'chat'>('simulations');
+  
   // Simulation states
   const [dailyChange, setDailyChange] = useState(0);
   const [fixedCostAdjustments, setFixedCostAdjustments] = useState<FixedCostAdjustment[]>([]);
@@ -157,113 +162,125 @@ export default function Simulations() {
     <AppLayout>
       <div className="space-y-6 animate-fade-in max-w-3xl mx-auto">
         {/* Header */}
-        <div className="space-y-2 text-center">
+        <div className="space-y-4 text-center">
           <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
             <Sparkles className="w-7 h-7 text-primary" />
           </div>
           <h1 className="text-2xl md:text-3xl font-serif font-semibold text-foreground">
-            Simular cenários
+            {mode === 'simulations' ? 'Simular cenários' : 'Assistente Financeiro'}
           </h1>
           <p className="text-muted-foreground max-w-md mx-auto">
-            Nada aqui altera seu plano real. Combine múltiplas decisões para ver o impacto completo.
+            {mode === 'simulations' 
+              ? 'Nada aqui altera seu plano real. Combine múltiplas decisões para ver o impacto completo.'
+              : 'Converse com a IA para explorar cenários e receber sugestões personalizadas.'}
           </p>
+          
+          {/* Mode Toggle */}
+          <SimulationsModeToggle mode={mode} onModeChange={setMode} />
         </div>
 
-        {/* Current State */}
-        <CurrentStateCard
-          dailyAverage={currentState.dailyAverage}
-          totalFixedCosts={currentState.totalFixedCosts}
-          availableForGoals={currentState.availableForGoals}
-          mainGoalName={currentState.goals[0]?.name}
-          mainGoalMonths={currentState.goals[0]?.estimatedMonths}
-        />
+        {/* Content based on mode */}
+        {mode === 'simulations' ? (
+          <>
+            {/* Current State */}
+            <CurrentStateCard
+              dailyAverage={currentState.dailyAverage}
+              totalFixedCosts={currentState.totalFixedCosts}
+              availableForGoals={currentState.availableForGoals}
+              mainGoalName={currentState.goals[0]?.name}
+              mainGoalMonths={currentState.goals[0]?.estimatedMonths}
+            />
 
-        {/* Simulation Tabs */}
-        <Tabs defaultValue="daily" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 h-auto p-1">
-            <TabsTrigger value="daily" className="flex items-center gap-2 py-3">
-              <ShoppingBag className="w-4 h-4" />
-              <span className="hidden sm:inline">Custo diário</span>
-              <span className="sm:hidden">Diário</span>
-            </TabsTrigger>
-            <TabsTrigger value="fixed" className="flex items-center gap-2 py-3">
-              <Home className="w-4 h-4" />
-              <span className="hidden sm:inline">Custos fixos</span>
-              <span className="sm:hidden">Fixos</span>
-            </TabsTrigger>
-            <TabsTrigger value="goals" className="flex items-center gap-2 py-3">
-              <Target className="w-4 h-4" />
-              <span className="hidden sm:inline">Metas</span>
-              <span className="sm:hidden">Metas</span>
-            </TabsTrigger>
-          </TabsList>
+            {/* Simulation Tabs */}
+            <Tabs defaultValue="daily" className="w-full">
+              <TabsList className="grid w-full grid-cols-3 h-auto p-1">
+                <TabsTrigger value="daily" className="flex items-center gap-2 py-3">
+                  <ShoppingBag className="w-4 h-4" />
+                  <span className="hidden sm:inline">Custo diário</span>
+                  <span className="sm:hidden">Diário</span>
+                </TabsTrigger>
+                <TabsTrigger value="fixed" className="flex items-center gap-2 py-3">
+                  <Home className="w-4 h-4" />
+                  <span className="hidden sm:inline">Custos fixos</span>
+                  <span className="sm:hidden">Fixos</span>
+                </TabsTrigger>
+                <TabsTrigger value="goals" className="flex items-center gap-2 py-3">
+                  <Target className="w-4 h-4" />
+                  <span className="hidden sm:inline">Metas</span>
+                  <span className="sm:hidden">Metas</span>
+                </TabsTrigger>
+              </TabsList>
 
-          <TabsContent value="daily" className="mt-4">
-            <Card>
-              <CardContent className="pt-6">
-                <DailyCostSimulation
-                  currentDailyAverage={currentState.dailyAverage}
-                  dailyChange={dailyChange}
-                  onDailyChangeUpdate={setDailyChange}
-                />
-              </CardContent>
-            </Card>
-          </TabsContent>
+              <TabsContent value="daily" className="mt-4">
+                <Card>
+                  <CardContent className="pt-6">
+                    <DailyCostSimulation
+                      currentDailyAverage={currentState.dailyAverage}
+                      dailyChange={dailyChange}
+                      onDailyChangeUpdate={setDailyChange}
+                    />
+                  </CardContent>
+                </Card>
+              </TabsContent>
 
-          <TabsContent value="fixed" className="mt-4">
-            <Card>
-              <CardContent className="pt-6">
-                <FixedCostsSimulation
-                  currentFixedCosts={currentState.fixedCosts}
-                  adjustments={fixedCostAdjustments}
-                  newCosts={newFixedCosts}
-                  onAdjustmentChange={handleFixedCostAdjustment}
-                  onRemoveAdjustment={handleRemoveFixedCostAdjustment}
-                  onAddNewCost={handleAddNewCost}
-                  onUpdateNewCost={handleUpdateNewCost}
-                  onRemoveNewCost={handleRemoveNewCost}
-                />
-              </CardContent>
-            </Card>
-          </TabsContent>
+              <TabsContent value="fixed" className="mt-4">
+                <Card>
+                  <CardContent className="pt-6">
+                    <FixedCostsSimulation
+                      currentFixedCosts={currentState.fixedCosts}
+                      adjustments={fixedCostAdjustments}
+                      newCosts={newFixedCosts}
+                      onAdjustmentChange={handleFixedCostAdjustment}
+                      onRemoveAdjustment={handleRemoveFixedCostAdjustment}
+                      onAddNewCost={handleAddNewCost}
+                      onUpdateNewCost={handleUpdateNewCost}
+                      onRemoveNewCost={handleRemoveNewCost}
+                    />
+                  </CardContent>
+                </Card>
+              </TabsContent>
 
-          <TabsContent value="goals" className="mt-4">
-            <Card>
-              <CardContent className="pt-6">
-                <GoalDedicationSimulation
-                  goals={currentState.goals}
-                  selectedGoalId={selectedGoalId}
-                  onGoalSelect={setSelectedGoalId}
-                  currentDedicationPercentage={currentDedicationPercentage}
-                  simulatedDedicationPercentage={goalDedicationPercentage}
-                  onDedicationChange={setGoalDedicationPercentage}
-                  availableForGoals={currentState.availableForGoals}
-                />
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+              <TabsContent value="goals" className="mt-4">
+                <Card>
+                  <CardContent className="pt-6">
+                    <GoalDedicationSimulation
+                      goals={currentState.goals}
+                      selectedGoalId={selectedGoalId}
+                      onGoalSelect={setSelectedGoalId}
+                      currentDedicationPercentage={currentDedicationPercentage}
+                      simulatedDedicationPercentage={goalDedicationPercentage}
+                      onDedicationChange={setGoalDedicationPercentage}
+                      availableForGoals={currentState.availableForGoals}
+                    />
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
 
-        {/* Simulation Result */}
-        {hasChanges && (
-          <SimulationResult
-            impactType={simulationResults.impactType}
-            monthlyImpact={simulationResults.totalMonthlyChange}
-            goalName={selectedGoal?.name}
-            monthsChange={isFinite(simulationResults.monthsChange) ? simulationResults.monthsChange : 0}
-            originalMonths={selectedGoal?.estimatedMonths || 0}
-            newMonths={isFinite(simulationResults.newEstimatedMonths) ? simulationResults.newEstimatedMonths : 999}
-            originalAvailable={currentState.availableForGoals}
-            newAvailable={simulationResults.newAvailable}
-            onReset={resetSimulation}
-          />
-        )}
+            {/* Simulation Result */}
+            {hasChanges && (
+              <SimulationResult
+                impactType={simulationResults.impactType}
+                monthlyImpact={simulationResults.totalMonthlyChange}
+                goalName={selectedGoal?.name}
+                monthsChange={isFinite(simulationResults.monthsChange) ? simulationResults.monthsChange : 0}
+                originalMonths={selectedGoal?.estimatedMonths || 0}
+                newMonths={isFinite(simulationResults.newEstimatedMonths) ? simulationResults.newEstimatedMonths : 999}
+                originalAvailable={currentState.availableForGoals}
+                newAvailable={simulationResults.newAvailable}
+                onReset={resetSimulation}
+              />
+            )}
 
-        {/* Empty state */}
-        {!hasChanges && (
-          <div className="text-center py-8 text-muted-foreground">
-            <p>Use os controles acima para simular mudanças no seu planejamento</p>
-          </div>
+            {/* Empty state */}
+            {!hasChanges && (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>Use os controles acima para simular mudanças no seu planejamento</p>
+              </div>
+            )}
+          </>
+        ) : (
+          <SimulationsChat />
         )}
       </div>
     </AppLayout>
